@@ -236,6 +236,92 @@ class EmailPollerJob:
 
         return None
 
+    async def import_historical_emails(self):
+        """
+        Import ALL historical emails into dashboard.
+        Does NOT create Jira tickets - only stores for dashboard visibility.
+        """
+        logger.info("=" * 60)
+        logger.info("STARTING HISTORICAL EMAIL IMPORT")
+        logger.info("=" * 60)
+
+        try:
+            # Fetch ALL emails from mailbox
+            emails = email_service.fetch_all_emails(limit=500)
+            logger.info(f"Found {len(emails)} historical emails to import")
+
+            imported = 0
+            skipped = 0
+
+            for email_data in emails:
+                try:
+                    from_email = (email_data.get("from_email") or "").strip().lower()
+                    subject = (email_data.get("subject") or "No Subject").strip()
+                    body = (email_data.get("text") or "").strip()
+
+                    if not from_email or not subject:
+                        skipped += 1
+                        continue
+
+                    brand = self.extract_brand_from_email(from_email)
+                    full_message = self.extract_clean_body(body)
+                    
+                    if not full_message.strip():
+                        html_content = email_data.get("html", "")
+                        if html_content:
+                            full_message = self.html_to_text(html_content)
+
+                    awb = self.extract_awb(subject + " " + (body or ""))
+                    
+                    # Parse email date for historical accuracy
+                    email_date = email_data.get("date")
+                    if email_date and not hasattr(email_date, 'tzinfo'):
+                        email_date = None
+
+                    ticket_payload = TicketCreate(
+                        brand=brand,
+                        sender_email=from_email,
+                        summary=subject,
+                        full_message=full_message or f"Email from {from_email}: {subject}",
+                        source="email",
+                        awb=awb
+                    )
+
+                    # Create display-only ticket (NO JIRA)
+                    result = await ticket_service.create_display_ticket(
+                        ticket_payload,
+                        email_date=email_date
+                    )
+
+                    if result:
+                        imported += 1
+                    else:
+                        skipped += 1
+
+                except Exception as e:
+                    logger.error(f"Error importing email: {str(e)}")
+                    skipped += 1
+
+            logger.info("=" * 60)
+            logger.info(f"HISTORICAL IMPORT COMPLETE: {imported} imported, {skipped} skipped")
+            logger.info("=" * 60)
+
+            return {
+                "status": "success",
+                "total_fetched": len(emails),
+                "imported": imported,
+                "skipped": skipped
+            }
+
+        except Exception as e:
+            logger.error(f"Historical import error: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
     def _run_async_loop(self):
         """Run the async event loop in a separate thread."""
         self._loop = asyncio.new_event_loop()

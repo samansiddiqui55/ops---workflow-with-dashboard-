@@ -67,8 +67,8 @@ function TicketDetail({ ticket, onResolve }) {
     );
   }
 
-  // Display Jira issue key if available, otherwise show ticket ID
-  const displayId = ticket.jira_issue_key || ticket.id;
+  // Display Jira issue key if available, otherwise show truncated ticket ID
+  const displayId = ticket.jira_issue_key || `TICKET-${(ticket.id || "").substring(0, 8)}`;
   
   // Build proper Jira URL: https://grow-simplee.atlassian.net/browse/{ISSUE_KEY}
   const jiraBaseUrl = "https://grow-simplee.atlassian.net";

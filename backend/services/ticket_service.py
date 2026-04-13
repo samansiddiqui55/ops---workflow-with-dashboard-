@@ -153,6 +153,46 @@ class TicketService:
             tickets.append(serialize_ticket(ticket))
         return tickets
 
+    async def create_display_ticket(self, payload: TicketCreate, email_date=None) -> Optional[dict]:
+        """
+        Create a display-only ticket (NO Jira creation).
+        Used for historical email import - shows in dashboard but doesn't create Jira tickets.
+        """
+        # Check for duplicate
+        existing_ticket = await self.find_existing_open_ticket(
+            sender_email=payload.sender_email,
+            subject=payload.summary
+        )
+        if existing_ticket:
+            return None  # Skip duplicates silently
+
+        # Classify issue type
+        issue_type = classify_issue_type(payload.summary, payload.full_message)
+
+        ticket = Ticket(
+            brand=payload.brand,
+            sender_email=payload.sender_email.lower().strip(),
+            summary=payload.summary,
+            full_message=payload.full_message,
+            source=payload.source,
+            awb=payload.awb,
+            issue_type=issue_type,
+            jira_issue_key=None,
+            jira_issue_id=None,
+            jira_url=None,
+            status="open"
+        )
+
+        # Use email date if provided for historical accuracy
+        if email_date:
+            ticket.created_at = email_date
+            ticket.updated_at = email_date
+
+        ticket_dict = ticket.model_dump()
+        await tickets_collection.insert_one(ticket_dict)
+        
+        return serialize_ticket(ticket_dict)
+
     async def get_ticket_by_id(self, ticket_id: str) -> Optional[dict]:
         ticket = await tickets_collection.find_one({"id": ticket_id})
         return serialize_ticket(ticket) if ticket else None

@@ -174,35 +174,21 @@ class EmailService:
             logger.error(f"Error marking email processed: {str(e)}")
 
     def is_valid_sender(self, from_email: str) -> bool:
-        """Check if sender is allowed."""
+        """Check if sender is allowed. Allow ALL emails except obvious spam."""
         email_lower = from_email.lower().strip()
         
-        # Check whitelist first - THIS IS THE MAIN CHECK
-        if email_lower in self.allowed_test_emails:
-            logger.info(f"✅ ALLOWED: {email_lower} (in whitelist)")
-            return True
+        if not email_lower or '@' not in email_lower:
+            return False
         
-        # Check blocked patterns
+        # Only block obvious spam/automated senders
         for pattern in self.BLOCKED_SENDERS:
             if pattern.lower() in email_lower:
-                logger.info(f"❌ BLOCKED: {email_lower} (matches pattern: {pattern})")
+                logger.info(f"BLOCKED: {email_lower} (spam pattern: {pattern})")
                 return False
         
-        # Check brand domains if configured
-        if self.brand_domains:
-            try:
-                domain = email_lower.split("@")[-1]
-                if domain in self.brand_domains:
-                    logger.info(f"✅ ALLOWED: {email_lower} (brand domain: {domain})")
-                    return True
-                logger.info(f"❌ BLOCKED: {email_lower} (domain {domain} not in brand list)")
-                return False
-            except:
-                pass
-        
-        # If no brand domains configured, still block unknown senders for safety
-        logger.info(f"❌ BLOCKED: {email_lower} (not in whitelist or brand domains)")
-        return False
+        # Allow ALL other emails
+        logger.info(f"ALLOWED: {email_lower}")
+        return True
 
     def is_valid_subject(self, subject: str) -> bool:
         """Check if subject is valid."""
@@ -395,6 +381,79 @@ class EmailService:
     async def fetch_unread_emails(self, limit: int = 50) -> List[Dict]:
         """Async wrapper for backward compatibility."""
         return self.fetch_new_emails(limit)
+
+    def fetch_all_emails(self, limit: int = 500) -> List[Dict]:
+        """
+        Fetch ALL emails from mailbox for historical import.
+        Does NOT update last_processed_uid. Does NOT check processed status.
+        Used for one-time import of historical data.
+        """
+        if not self.is_configured:
+            logger.info("Email not configured - skipping fetch")
+            return []
+
+        mailbox = self.connect_imap("[Gmail]/All Mail")
+        if not mailbox:
+            return []
+
+        try:
+            logger.info(f"Fetching ALL emails (up to {limit}) for historical import...")
+            
+            emails = []
+            messages = list(mailbox.fetch(limit=limit, reverse=True))
+            logger.info(f"Fetched {len(messages)} messages from server")
+            
+            for msg in messages:
+                try:
+                    from_email = (msg.from_ or "").strip().lower()
+                    subject = msg.subject or "(no subject)"
+                    message_id = msg.headers.get('message-id', [''])[0]
+                    
+                    if not from_email:
+                        continue
+                    
+                    # Only filter out spam, allow everything else
+                    if not self.is_valid_sender(from_email):
+                        continue
+                    
+                    if not self.is_valid_subject(subject):
+                        continue
+
+                    email_data = {
+                        "message_id": message_id,
+                        "in_reply_to": msg.headers.get('in-reply-to', [''])[0],
+                        "references": msg.headers.get('references', [''])[0],
+                        "from_name": msg.from_,
+                        "from_email": from_email,
+                        "to": msg.to,
+                        "cc": msg.cc,
+                        "subject": subject,
+                        "text": msg.text or "",
+                        "html": msg.html or "",
+                        "date": msg.date,
+                        "uid": msg.uid
+                    }
+
+                    emails.append(email_data)
+
+                except Exception as e:
+                    logger.error(f"Error processing email: {str(e)}")
+                    continue
+
+            logger.info(f"Historical import: {len(emails)} emails ready for dashboard")
+            return emails
+
+        except Exception as e:
+            logger.error(f"Error in fetch_all_emails: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+
+        finally:
+            try:
+                mailbox.logout()
+            except:
+                pass
 
     async def mark_as_read(self, uid: str) -> bool:
         """Mark email as read."""

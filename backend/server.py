@@ -320,6 +320,16 @@ async def trigger_email_poll():
     return {"status": "Email polling triggered"}
 
 
+@api_router.post("/import/historical-emails")
+async def import_historical_emails():
+    """
+    One-time import: Fetch ALL historical emails and add them to dashboard.
+    Does NOT create Jira tickets. Only shows in dashboard for visibility.
+    """
+    result = await email_poller.import_historical_emails()
+    return result
+
+
 # -------------------- INCLUDE ROUTES --------------------
 
 api_router.include_router(webhooks.router)
@@ -387,14 +397,21 @@ async def startup_event():
     logger.info(f"Jira configured: {bool(settings.jira_api_token)}")
     logger.info(f"Slack configured: {bool(settings.slack_bot_token)}")
 
-    email_poller.start()
-    logger.info("Email poller started")
-
     try:
         await db.command("ping")
         logger.info("MongoDB connection successful")
+        
+        # Auto-import historical emails if database is empty
+        ticket_count = await db.tickets.count_documents({})
+        if ticket_count == 0:
+            logger.info("Empty database detected - importing historical emails...")
+            result = await email_poller.import_historical_emails()
+            logger.info(f"Historical import result: {result}")
     except Exception as e:
-        logger.error(f"MongoDB connection failed: {str(e)}")
+        logger.error(f"Startup error: {str(e)}")
+
+    email_poller.start()
+    logger.info("Email poller started")
 
     logger.info("=== OpsFlow Ready ===")
 

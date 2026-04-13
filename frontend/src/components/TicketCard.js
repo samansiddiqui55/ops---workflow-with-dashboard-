@@ -27,8 +27,8 @@ import React from "react";
 import StatusBadge from "./StatusBadge";
 
 function TicketCard({ ticket, isSelected, onClick }) {
-  // Display Jira issue key if available, otherwise show ticket ID
-  const displayId = ticket.jira_issue_key || ticket.id;
+  // Display Jira issue key if available, otherwise show truncated ticket ID
+  const displayId = ticket.jira_issue_key || `TICKET-${(ticket.id || "").substring(0, 8)}`;
   
   return (
     <div
