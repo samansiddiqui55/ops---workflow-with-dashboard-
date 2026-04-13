@@ -8,7 +8,7 @@ const WS_BASE = process.env.REACT_APP_BACKEND_URL
   : `ws://${window.location.host}`;
 
 export function createTicketWebSocket(onMessage) {
-  const wsUrl = `${WS_BASE}/ws/tickets`;
+  const wsUrl = `${WS_BASE}/api/ws/tickets`;
   let ws = null;
   let reconnectTimeout = null;
   let pingInterval = null;

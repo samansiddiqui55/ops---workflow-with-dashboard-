@@ -359,7 +359,7 @@ class ConnectionManager:
 
 ws_manager = ConnectionManager()
 
-@app.websocket("/ws/tickets")
+@app.websocket("/api/ws/tickets")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:

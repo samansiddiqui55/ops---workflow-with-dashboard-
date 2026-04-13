@@ -153,15 +153,25 @@ function SupportDashboard({ onNavigate }) {
     loadTickets();
   }, [loadTickets]);
 
-  // WebSocket for real-time updates
+  // WebSocket for real-time updates with polling fallback
   useEffect(() => {
+    let pollInterval = null;
+    
     const cleanup = createTicketWebSocket((message) => {
       if (message.type === "new_ticket" || message.type === "ticket_resolved") {
-        // Reload tickets when we get a WebSocket update
         loadTickets();
       }
     });
-    return cleanup;
+
+    // Polling fallback every 30 seconds
+    pollInterval = setInterval(() => {
+      loadTickets();
+    }, 30000);
+
+    return () => {
+      cleanup();
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [loadTickets]);
 
   const filteredTickets = useMemo(() => {
